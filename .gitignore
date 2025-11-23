@@ -14,3 +14,6 @@ plan5
 terraform.tfstate
 terraform.tfstate.backup
 *.tfplan
+node_modules/
+services/api/node_modules/
+services/web/node_modules/
