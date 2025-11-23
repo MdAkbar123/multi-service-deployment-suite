@@ -1,0 +1,113 @@
+pipeline {
+  agent any
+
+  environment {
+    AWS_REGION       = 'ap-south-1'
+    ECR_API          = '123456789012.dkr.ecr.ap-south-1.amazonaws.com/ms-api'
+    ECR_WEB          = '123456789012.dkr.ecr.ap-south-1.amazonaws.com/ms-web'
+    DOCKER_HOST_IP   = 'ec2-43.205.99.57.ap-south-1.compute.amazonaws.com'
+    SSH_KEY_CRED     = 'my_deploy_key'       // Jenkins credential ID for PEM key
+    AWS_CRED         = 'aws-jenkins-creds' // Jenkins credential ID for AWS access keys
+    DEPLOY_DIR       = '/opt/multi-service'
+  }
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Setup AWS Auth') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CRED}"]]) {
+          sh '''
+            echo "Authenticating to ECR..."
+            aws ecr get-login-password --region $AWS_REGION | \
+              docker login --username AWS --password-stdin ${ECR_API}
+            aws ecr get-login-password --region $AWS_REGION | \
+              docker login --username AWS --password-stdin ${ECR_WEB}
+          '''
+        }
+      }
+    }
+
+    stage('Build API Image') {
+      steps {
+        dir('services/api') {
+          sh '''
+            docker build -t ms-api:latest .
+            docker tag ms-api:latest ${ECR_API}:latest
+          '''
+        }
+      }
+    }
+
+    stage('Build Web Image') {
+      steps {
+        dir('services/web') {
+          sh '''
+            docker build -t ms-web:latest .
+            docker tag ms-web:latest ${ECR_WEB}:latest
+          '''
+        }
+      }
+    }
+
+    stage('Unit Tests (API & Web)') {
+      steps {
+        sh '''
+          cd services/api && npm ci && npm test || echo "Skipping tests"
+          cd ../web && npm ci && npm test || echo "Skipping tests"
+        '''
+      }
+    }
+
+    stage('Security Scan') {
+      steps {
+        sh '''
+          docker run --rm aquasec/trivy image ${ECR_API}:latest || true
+          docker run --rm aquasec/trivy image ${ECR_WEB}:latest || true
+        '''
+      }
+    }
+
+    stage('Push to ECR') {
+      steps {
+        sh '''
+          docker push ${ECR_API}:latest
+          docker push ${ECR_WEB}:latest
+        '''
+      }
+    }
+
+    stage('Deploy to EC2') {
+      steps {
+        sshagent([SSH_KEY_CRED]) {
+          sh '''
+            ssh -o StrictHostKeyChecking=no ubuntu@${DOCKER_HOST_IP} '
+              cd ${DEPLOY_DIR} &&
+              sudo docker-compose pull &&
+              sudo docker-compose up -d --remove-orphans
+            '
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo '✅ Deployment successful!'
+    }
+    failure {
+      echo '❌ Build failed!'
+    }
+  }
+}

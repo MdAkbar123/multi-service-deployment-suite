@@ -1,0 +1,135 @@
+
+services:
+  web:
+    image: ${ECR_WEB}:latest
+    container_name: web
+    restart: always
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      - api
+    ports:
+      - "8081:80"
+    # logging:
+    #   driver: awslogs
+    #   options:
+    #     awslogs-group: /multi-service/app
+    #     awslogs-region: ${AWS_REGION}
+    #     awslogs-stream-prefix: web
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  api:
+    image: ${ECR_API}:latest
+    container_name: api
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - MONGO_URI=${MONGO_URI}
+      - REDIS_URL=redis://redis:6379
+    networks:
+      - backend
+    ports:
+      - "5000:3000"
+    depends_on:
+      - mongo
+      - redis
+    # logging:
+    #   driver: awslogs
+    #   options:
+    #     awslogs-group: /multi-service/app
+    #     awslogs-region: ${AWS_REGION}
+    #     awslogs-stream-prefix: api
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:3000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  mongo:
+    image: mongo:6.0
+    container_name: mongo
+    restart: always
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - backend
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=${mongo_root_password}
+    
+    # secrets:
+    #   - mongo_root_password
+    # logging:
+    #   driver: awslogs
+    #   options:
+    #     awslogs-group: /multi-service/app
+    #     awslogs-region: ${AWS_REGION}
+    #     awslogs-stream-prefix: mongo
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    volumes:
+      - redis-data:/data
+    networks:
+      - backend
+    # logging:
+    #   driver: awslogs
+    #   options:
+    #     awslogs-group: /multi-service/app
+    #     awslogs-region: ${AWS_REGION}
+    #     awslogs-stream-prefix: redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  nginx-proxy:
+    image: nginx:1.25-alpine
+    container_name: nginx-proxy
+    restart: always
+    depends_on:
+      - web
+      - api
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+    networks:
+      - frontend
+      - backend
+    # logging:
+    #   driver: awslogs
+    #   options:
+    #     awslogs-group: /multi-service/app
+    #     awslogs-region: ${AWS_REGION}
+    #     awslogs-stream-prefix: nginx
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+networks:
+  frontend:
+  backend:
+
+volumes:
+  mongo-data:
+  redis-data:
+
+# secrets:
+#   mongo_root_password:
+#     file: /opt/multi-service/secrets/mongo_root_password.txt

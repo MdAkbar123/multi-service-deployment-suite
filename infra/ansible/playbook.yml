@@ -1,0 +1,7 @@
+---
+- name: Configure Multi-Service Docker Host
+  hosts: docker_hosts
+  become: yes
+  roles:
+    - docker
+    - cw-agent

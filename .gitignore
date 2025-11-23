@@ -1,0 +1,16 @@
+.env
+.ansible
+.vscode
+group_vars/
+__pycache__/
+opt/multi-service/.env
+.terraform/
+.terraform.lock.hcl
+plan1
+plan2
+plan3
+plan4
+plan5
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan

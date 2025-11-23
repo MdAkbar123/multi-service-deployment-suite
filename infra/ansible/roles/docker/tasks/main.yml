@@ -1,0 +1,119 @@
+- name: Ensure required apt packages are present
+  apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  loop:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - gnupg
+    - lsb-release
+
+- name: Add Docker’s official GPG key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Add Docker repository
+  apt_repository:
+    repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable
+    state: present
+
+- name: Install Docker Engine and Compose
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+    update_cache: yes
+
+- name: Start and enable Docker
+  service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Create app directory
+  file:
+    path: /opt/multi-service
+    state: directory
+    mode: "0755"
+
+- name: Copy docker-compose file (if available)
+  copy:
+    src: ../../../../deployment/docker-compose.yml
+    dest: /opt/multi-service/docker-compose.yml
+    mode: "0644"
+
+- name: Create environment file
+  copy:
+    dest: /opt/multi-service/.env
+    content: |
+      ECR_API={{ ecr_api_url }}
+      ECR_WEB={{ ecr_web_url }}
+      AWS_REGION=ap-south-1
+      MONGO_URI={{ mongo_uri }}
+      mongo_root_password={{ mongo_root_password }}
+      PORT=5000
+      REACT_APP_API_URL=http://{{ public_ip }}:5000
+
+- name: Install unzip
+  apt:
+    name: unzip
+    state: present
+    update_cache: yes
+
+- name: Download AWS CLI v2 bundle
+  get_url:
+    url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+    dest: /tmp/awscliv2.zip
+    mode: '0644'
+
+- name: Unzip AWS CLI v2
+  unarchive:
+    src: /tmp/awscliv2.zip
+    dest: /tmp/
+    remote_src: yes
+
+- name: Install AWS CLI v2
+  shell: /tmp/aws/install --update
+
+- name: Login to AWS ECR
+  shell: |
+    aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 448049821147.dkr.ecr.ap-south-1.amazonaws.com
+# - name: Copy project directory
+#   copy:
+#     src: ../../../../services
+#     dest: /opt/multi-service/
+#     mode: "0644"
+# - name: Create secrets directory
+#   file:
+#     path: /opt/multi-service/secrets
+#     state: directory
+#     mode: "0700"
+
+# - name: Create Mongo root password file
+#   copy:
+#     dest: /opt/multi-service/secrets/mongo_root_password.txt
+#     content: "{{ mongo_root_password }}"
+#     mode: "0600"
+
+- name: Create nginx config directory
+  file:
+    path: /opt/multi-service/nginx
+    state: directory
+    mode: "0755"
+
+- name: Copy nginx proxy config
+  copy:
+    src: ../../../../deployment/nginx/default.conf
+    dest: /opt/multi-service/nginx/default.conf
+    mode: "0644"
+
+- name: Deploy containers
+  shell: docker compose -f /opt/multi-service/docker-compose.yml up -d
+  args:
+    chdir: /opt/multi-service

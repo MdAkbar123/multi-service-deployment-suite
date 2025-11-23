@@ -1,0 +1,31 @@
+---
+- name: Install CloudWatch Agent
+  apt:
+    deb: https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+    state: present
+
+- name: Configure CloudWatch Agent
+  copy:
+    dest: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+    content: |
+      {
+        "logs": {
+          "logs_collected": {
+            "files": {
+              "collect_list": [
+                {
+                  "file_path": "/var/lib/docker/containers/*/*.log",
+                  "log_group_name": "/multi-service/app",
+                  "log_stream_name": "{instance_id}"
+                }
+              ]
+            }
+          }
+        }
+      }
+
+- name: Ensure CloudWatch Agent service is started
+  systemd:
+    name: amazon-cloudwatch-agent
+    state: started
+    enabled: yes
