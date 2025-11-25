@@ -17,3 +17,4 @@ terraform.tfstate.backup
 node_modules/
 services/api/node_modules/
 services/web/node_modules/
+.idea
