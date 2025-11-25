@@ -1,0 +1,3 @@
+.terraform*
+plan1
+terraform.tfstate*

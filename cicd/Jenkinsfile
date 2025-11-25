@@ -3,9 +3,9 @@ pipeline {
 
   environment {
     AWS_REGION       = 'ap-south-1'
-    ECR_API          = '123456789012.dkr.ecr.ap-south-1.amazonaws.com/ms-api'
-    ECR_WEB          = '123456789012.dkr.ecr.ap-south-1.amazonaws.com/ms-web'
-    DOCKER_HOST_IP   = 'ec2-43.205.99.57.ap-south-1.compute.amazonaws.com'
+    ECR_API          = ${params.ECR_API}
+    ECR_WEB          = ${params.ECR_WEB}
+    DOCKER_HOST_IP   = ${params.DOCKER_HOST_IP}
     SSH_KEY_CRED     = 'my_deploy_key'       // Jenkins credential ID for PEM key
     AWS_CRED         = 'aws-jenkins-creds' // Jenkins credential ID for AWS access keys
     DEPLOY_DIR       = '/opt/multi-service'

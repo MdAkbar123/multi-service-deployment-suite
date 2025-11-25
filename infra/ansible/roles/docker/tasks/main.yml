@@ -113,7 +113,7 @@
     dest: /opt/multi-service/nginx/default.conf
     mode: "0644"
 
-- name: Deploy containers
-  shell: docker compose -f /opt/multi-service/docker-compose.yml up -d
-  args:
-    chdir: /opt/multi-service
+# - name: Deploy containers
+#   shell: docker compose -f /opt/multi-service/docker-compose.yml up -d
+#   args:
+#     chdir: /opt/multi-service
