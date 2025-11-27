@@ -77,12 +77,12 @@ pipeline {
       }
     }
 
-    // 🛠️ FIX 2: Added --timeout 15m to prevent the DB download crash
     stage('Security Scan') {
       steps {
+        // Scan the LOCAL image names (ms-api:latest) instead of the remote ${ECR_API}
         sh '''
-          docker run --rm aquasec/trivy image --timeout 15m ${ECR_API}:latest || true
-          docker run --rm aquasec/trivy image --timeout 15m ${ECR_WEB}:latest || true
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --timeout 15m ms-api:latest || true
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --timeout 15m ms-web:latest || true
         '''
       }
     }
@@ -98,17 +98,30 @@ pipeline {
 
     stage('Deploy to EC2') {
       steps {
-        // 🛠️ FIX 3: Ensure "SSH Agent Plugin" is installed in Jenkins
         sshagent([SSH_KEY_CRED]) {
-          sh '''
-            ssh -o StrictHostKeyChecking=no ubuntu@${DOCKER_HOST_IP} "
-              mkdir -p ${DEPLOY_DIR} &&
-              cd ${DEPLOY_DIR} &&
-              # Ensure docker-compose exists, or use 'docker compose' (v2)
-              sudo docker compose pull || sudo docker-compose pull &&
-              sudo docker compose up -d --remove-orphans || sudo docker-compose up -d --remove-orphans
-            "
-          '''
+          // We need AWS credentials available here to generate the login token
+          withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: AWS_CRED]]) {
+            sh '''
+              # 1. Get the ECR Password on the Jenkins machine
+              ECR_PASSWORD=$(aws ecr get-login-password --region $AWS_REGION)
+              
+              # 2. Get the Registry URL (e.g., 12345.dkr.ecr...) from the full image name
+              REGISTRY_URL=$(echo $ECR_API | cut -d'/' -f1)
+
+              # 3. SSH into EC2, Log in to Docker, and Pull/Up
+              # We use double quotes "..." for the SSH command so the $ECR_PASSWORD variable expands locally
+              ssh -o StrictHostKeyChecking=no ubuntu@${DOCKER_HOST_IP} "
+                echo $ECR_PASSWORD | sudo docker login --username AWS --password-stdin $REGISTRY_URL &&
+                
+                mkdir -p ${DEPLOY_DIR} &&
+                cd ${DEPLOY_DIR} &&
+                
+                # Using 'docker compose' (v2) which is standard now
+                sudo docker compose pull &&
+                sudo docker compose up -d --remove-orphans
+              "
+            '''
+          }
         }
       }
     }
