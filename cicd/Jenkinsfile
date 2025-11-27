@@ -6,8 +6,8 @@ pipeline {
     ECR_API          = "${params.ECR_API}"
     ECR_WEB          = "${params.ECR_WEB}"
     DOCKER_HOST_IP   = "${params.DOCKER_HOST_IP}"
-    SSH_KEY_CRED     = 'my_deploy_key'       // Jenkins credential ID for PEM key
-    AWS_CRED         = 'aws-jenkins-creds' // Jenkins credential ID for AWS access keys
+    SSH_KEY_CRED     = 'my_deploy_key'       
+    AWS_CRED         = 'aws-jenkins-creds' 
     DEPLOY_DIR       = '/opt/multi-service'
   }
 
@@ -60,20 +60,29 @@ pipeline {
       }
     }
 
+    // 🛠️ FIX 1: Run tests inside a Node container, not on the Jenkins host
     stage('Unit Tests (API & Web)') {
       steps {
-        sh '''
-          cd services/api && npm ci && npm test || echo "Skipping tests"
-          cd ../web && npm ci && npm test || echo "Skipping tests"
-        '''
+        script {
+          docker.image('node:20-alpine').inside {
+            dir('services/api') {
+              // npm install is usually safer than ci for clean environments, but ci is fine if lockfile exists
+              sh 'npm ci && npm test || echo "API Tests failed (ignoring for now)"'
+            }
+            dir('services/web') {
+              sh 'npm ci && npm test || echo "Web Tests failed (ignoring for now)"'
+            }
+          }
+        }
       }
     }
 
+    // 🛠️ FIX 2: Added --timeout 15m to prevent the DB download crash
     stage('Security Scan') {
       steps {
         sh '''
-          docker run --rm aquasec/trivy image ${ECR_API}:latest || true
-          docker run --rm aquasec/trivy image ${ECR_WEB}:latest || true
+          docker run --rm aquasec/trivy image --timeout 15m ${ECR_API}:latest || true
+          docker run --rm aquasec/trivy image --timeout 15m ${ECR_WEB}:latest || true
         '''
       }
     }
@@ -89,13 +98,16 @@ pipeline {
 
     stage('Deploy to EC2') {
       steps {
+        // 🛠️ FIX 3: Ensure "SSH Agent Plugin" is installed in Jenkins
         sshagent([SSH_KEY_CRED]) {
           sh '''
-            ssh -o StrictHostKeyChecking=no ubuntu@${DOCKER_HOST_IP} '
+            ssh -o StrictHostKeyChecking=no ubuntu@${DOCKER_HOST_IP} "
+              mkdir -p ${DEPLOY_DIR} &&
               cd ${DEPLOY_DIR} &&
-              sudo docker-compose pull &&
-              sudo docker-compose up -d --remove-orphans
-            '
+              # Ensure docker-compose exists, or use 'docker compose' (v2)
+              sudo docker compose pull || sudo docker-compose pull &&
+              sudo docker compose up -d --remove-orphans || sudo docker-compose up -d --remove-orphans
+            "
           '''
         }
       }
